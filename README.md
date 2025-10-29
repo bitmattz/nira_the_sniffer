@@ -22,6 +22,11 @@ go mod download
 go run ./main.go
 ```
 
+3. Build the project
+```bash
+go build -o nira.exe
+```
+
 
 
 
