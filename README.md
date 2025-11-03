@@ -28,6 +28,18 @@ go build -o nira.exe
 ```
 
 
+## ChangeLogs
+- **28/08/2025** -
 
+``
+Add bubbleTea and lipgloss to create CLI Interface, Implement menu system``
+
+---
+
+- **27/08/2025** -
+
+``
+Fist commit
+``
 
 
