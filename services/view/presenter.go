@@ -25,9 +25,6 @@ type (
 var stylePurple = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
 var styleTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
 var styleSubTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#95ffd8ff"))
-var tableStyle = lipgloss.NewStyle().
-	BorderStyle(lipgloss.NormalBorder()).
-	BorderForeground(lipgloss.Color("240"))
 
 const (
 	menu int = iota
@@ -49,7 +46,7 @@ func initialModel() ApplicationPresenter {
 	)
 
 	return ApplicationPresenter{
-		Choices:     []string{"Scan ports from IP", "Scan specific port", "History"},
+		Choices:     []string{"Scan ports from IP"},
 		Cursor:      0,
 		Selected:    make(map[int]struct{}),
 		Page:        menu,
@@ -160,10 +157,6 @@ func (m ApplicationPresenter) View() string {
 		return loadMenuView(m)
 	case scanPorts:
 		return scanPortsByIPView(m)
-	case scanSpecificPort:
-		return scanPortView(m)
-	case history:
-		return stylePurple.Render("History - [Functionality to be implemented]\nPress Enter to go back to menu.")
 	}
 
 	return ""
@@ -197,32 +190,11 @@ func scanPortsByIPView(m ApplicationPresenter) string {
 	s += styleSubTitle.Render("Enter a IP address.\n")
 
 	s += "\n" + m.TextInput.View() + "\n"
-
-	//ADD TABLE VIEW
+	var tableStyle = lipgloss.NewStyle().
+		BorderForeground(lipgloss.Color("240"))
 
 	s += "\n" + tableStyle.Render(m.TableResult.View()) + "\n"
 
-	s += "\nPress esc or backspace to go back to menu.\n"
-	s += "\nPress q to quit.\n"
-
-	return s
-}
-
-func scanPortView(m ApplicationPresenter) string {
-	s := stylePurple.Render("Nira The Sniffer\n")
-	s += "\nScan specific port from device\n\n"
-
-	// Iterate over choices
-	for i, choice := range m.Choices {
-		cursor := " " // no cursor
-		if m.Cursor == i {
-			cursor = stylePurple.Render(">")
-			choice = stylePurple.Render(choice)
-		}
-
-		// Render the row
-		s += cursor + " " + choice + "\n"
-	}
 	s += "\nPress esc or backspace to go back to menu.\n"
 	s += "\nPress q to quit.\n"
 

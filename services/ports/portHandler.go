@@ -1,39 +1,83 @@
 package services
 
 import (
+	"log"
 	"net"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/bitmattz/nira_the_sniffer/models"
+)
+
+const (
+	DefaultTimeout     = 500 * time.Millisecond
+	DefaultConcurrency = 200
+	MaxPort            = 65535
 )
 
 func ScanPort(protocol, hostname string, port int) models.PortScan {
 	result := models.PortScan{
 		Port: port,
 	}
-	address := hostname + ":" + strconv.Itoa(port)
-	conn, err := net.DialTimeout(protocol, address, 60*time.Second)
-
+	address := net.JoinHostPort(hostname, strconv.Itoa(port))
+	conn, err := net.DialTimeout(protocol, address, DefaultTimeout)
+	log.Printf("Scan started for port %d", port)
 	if err != nil {
-		result.State = "closed"
+		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+			result.State = "filtered"
+		} else {
+			result.State = "closed"
+		}
+		log.Printf("Port %d -> %s", port, result.State)
 		return result
 	}
-
 	defer conn.Close()
 	result.State = "open"
+	log.Printf("Port %d -> %s", port, result.State)
 	return result
 }
 
 func ScanPorts(hostname string) []models.PortScan {
 	var results []models.PortScan
 
-	for i := 1; i < 1024; i++ {
-		portScanned := ScanPort("tcp", hostname, i)
-		if portScanned.State == "open" {
-			results = append(results, portScanned)
-		}
+	concurrency := DefaultConcurrency
+	//Channels
+	portsCh := make(chan int, concurrency)
+	resultsCh := make(chan models.PortScan, 256)
+
+	//Worker group
+	var wg sync.WaitGroup
+
+	for w := 0; w < concurrency; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for port := range portsCh {
+				r := ScanPort("tcp", hostname, port)
+				if r.State == "open" {
+					resultsCh <- r
+				}
+			}
+		}()
 	}
+
+	go func() {
+		for i := 1; i <= MaxPort; i++ {
+			portsCh <- i
+		}
+		close(portsCh)
+	}()
+
+	go func() {
+		wg.Wait()
+		close(resultsCh)
+	}()
+
+	for r := range resultsCh {
+		results = append(results, r)
+	}
+
 	return results
 }
 
