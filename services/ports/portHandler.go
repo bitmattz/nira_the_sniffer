@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/bitmattz/nira_the_sniffer/models"
+	topPorts "github.com/bitmattz/nira_the_sniffer/services/topPorts"
 )
 
 const (
 	DefaultTimeout     = 500 * time.Millisecond
 	DefaultConcurrency = 200
-	MaxPort            = 65535
 )
 
 func ScanPort(protocol, hostname string, port int) models.PortScan {
@@ -22,14 +22,13 @@ func ScanPort(protocol, hostname string, port int) models.PortScan {
 	}
 	address := net.JoinHostPort(hostname, strconv.Itoa(port))
 	conn, err := net.DialTimeout(protocol, address, DefaultTimeout)
-	log.Printf("Scan started for port %d", port)
+	// log.Printf("Scan started for port %d", port)
 	if err != nil {
 		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
-			result.State = "filtered"
 		} else {
 			result.State = "closed"
 		}
-		log.Printf("Port %d -> %s", port, result.State)
+		// log.Printf("Port %d -> %s", port, result.State)
 		return result
 	}
 	defer conn.Close()
@@ -63,8 +62,9 @@ func ScanPorts(hostname string) []models.PortScan {
 	}
 
 	go func() {
-		for i := 1; i <= MaxPort; i++ {
-			portsCh <- i
+		var ports []int = topPorts.GetTopPorts(1000)
+		for _, port := range ports {
+			portsCh <- port
 		}
 		close(portsCh)
 	}()

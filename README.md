@@ -14,7 +14,7 @@ A network tool built with Go to study Go, Cybersecurity and make hacking more ea
 
 1. Install dependencies:
 ```bash
-go mod download
+go mod tidy
 ```
 
 2. Run the project:

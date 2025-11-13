@@ -27457,6 +27457,6 @@ var TopPorts = []int{80,
 }
 
 // You can get the top N ports by calling getTopPorts with the desired limit. 0-27473
-func getTopPorts(limit int) []int {
+func GetTopPorts(limit int) []int {
 	return TopPorts[:limit]
 }
