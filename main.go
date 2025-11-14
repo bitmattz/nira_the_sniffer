@@ -11,5 +11,5 @@ import (
 func main() {
 	fmt.Println("PortScanning in Go")
 	presenter.StartApplicationPresenter()
-	// portHandler.ScanPorts("localhost")
+	// portHandler.ScanPorts("192.168.1.32")
 }

@@ -2,6 +2,10 @@
 
 A network tool built with Go to study Go, Cybersecurity and make hacking more easy for me. Feel free to colaborate or raise issues.
 
+## Features
+- Port Enumeration
+- Banner Grabbing
+
 ![Nira-The-Sniffer](resources/images/NiraTheSniffer.png)
 
 

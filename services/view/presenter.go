@@ -18,10 +18,6 @@ import (
 
 type ApplicationPresenter models.ApplicationPresenter
 
-type (
-	errMsg error
-)
-
 var stylePurple = lipgloss.NewStyle().Foreground(lipgloss.Color("12")).Bold(true)
 var styleTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#04B575")).Bold(true)
 var styleSubTitle = lipgloss.NewStyle().Foreground(lipgloss.Color("#95ffd8ff"))
@@ -71,28 +67,37 @@ func (m ApplicationPresenter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// If user pressed Enter while typing, handle the value and exit input mode
 			if key.String() == "enter" {
 				address := m.TextInput.Value()
-				if m.Page == scanPorts {
+				switch m.Page {
+				case scanPorts:
+
 					result := portHandler.ScanPorts(address)
 					m.TextInput.Blur()
-					columns := []table.Column{
-						{Title: "Port", Width: 10},
-						{Title: "State", Width: 10},
+					if result == nil || len(result) == 0 {
+						m.InputMode = false
+						return m, nil
+
+					} else {
+						columns := []table.Column{
+							{Title: "Port", Width: 10},
+							{Title: "State", Width: 10},
+							{Title: "Service", Width: 200},
+						}
+						rows := make([]table.Row, len(result))
+						for i, scan := range result {
+							rows[i] = table.Row{strconv.Itoa(scan.Port), scan.State, scan.Service}
+						}
+
+						t := table.New(
+							table.WithColumns(columns),
+							table.WithRows(rows),
+							table.WithFocused(true),
+							table.WithHeight(7),
+						)
+
+						m.TableResult = t
 					}
-					rows := make([]table.Row, len(result))
-					for i, scan := range result {
-						rows[i] = table.Row{strconv.Itoa(scan.Port), scan.State}
-					}
 
-					t := table.New(
-						table.WithColumns(columns),
-						table.WithRows(rows),
-						table.WithFocused(true),
-						table.WithHeight(7),
-					)
-
-					m.TableResult = t
-
-				} else if m.Page == scanSpecificPort {
+				case scanSpecificPort:
 					var port, err = strconv.Atoi(address)
 					if err != nil {
 						return m, nil

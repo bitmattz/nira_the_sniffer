@@ -1,9 +1,12 @@
 package services
 
 import (
-	"log"
+	"bufio"
+	"crypto/tls"
+	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -16,28 +19,80 @@ const (
 	DefaultConcurrency = 200
 )
 
+var mu sync.Mutex
+
 func ScanPort(protocol, hostname string, port int) models.PortScan {
 	result := models.PortScan{
 		Port: port,
 	}
 	address := net.JoinHostPort(hostname, strconv.Itoa(port))
 	conn, err := net.DialTimeout(protocol, address, DefaultTimeout)
-	// log.Printf("Scan started for port %d", port)
 	if err != nil {
 		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+			result.State = "filtered"
 		} else {
 			result.State = "closed"
 		}
-		// log.Printf("Port %d -> %s", port, result.State)
 		return result
 	}
 	defer conn.Close()
 	result.State = "open"
-	log.Printf("Port %d -> %s", port, result.State)
+	// banner grab básico: tenta ler dados enviados pelo serviço
+	_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	reader := bufio.NewReader(conn)
+	peek, _ := reader.Peek(1024) // não bloqueia mais que o deadline
+	if len(peek) > 0 {
+		b := strings.TrimSpace(string(peek))
+		// mantém só a primeira linha do banner para evitar muito texto
+		if idx := strings.IndexByte(b, '\n'); idx >= 0 {
+			b = strings.TrimSpace(b[:idx])
+		}
+		result.Service = fmt.Sprintf("banner: %s", b)
+		return result
+	}
+
+	// probes simples por porta conhecida (HTTP/TLS)
+	httpPorts := map[int]bool{80: true, 8080: true, 8000: true, 8081: true}
+	if httpPorts[port] {
+		// enviar HEAD para provocar resposta
+		_ = conn.SetWriteDeadline(time.Now().Add(300 * time.Millisecond))
+		fmt.Fprintf(conn, "HEAD / HTTP/1.0\r\nHost: %s\r\n\r\n", hostname)
+		_ = conn.SetReadDeadline(time.Now().Add(700 * time.Millisecond))
+		resp, _ := reader.ReadString('\n')
+		resp = strings.TrimSpace(resp)
+		if resp != "" {
+			result.Service = fmt.Sprintf("http: %s", resp)
+			return result
+		}
+	}
+
+	// TLS handshake em 443 (ou se porta for 8443)
+	if port == 443 || port == 8443 {
+		// reaproveitar a conexão para handshake TLS
+		_ = conn.SetDeadline(time.Now().Add(1 * time.Second))
+		tlsConn := tls.Client(conn, &tls.Config{
+			InsecureSkipVerify: true,
+			ServerName:         hostname,
+		})
+		if err := tlsConn.Handshake(); err == nil {
+			if state := tlsConn.ConnectionState(); len(state.PeerCertificates) > 0 {
+				cn := state.PeerCertificates[0].Subject.CommonName
+				result.Service = fmt.Sprintf("tls: %s", cn)
+				return result
+			}
+			result.Service = "tls"
+			return result
+		}
+		// se handshake falhar, continua sem service
+	}
+
+	// fallback: nenhum banner detectado
+	result.Service = "unknown"
 	return result
 }
 
 func ScanPorts(hostname string) []models.PortScan {
+	mu.Lock()
 	var results []models.PortScan
 
 	concurrency := DefaultConcurrency
@@ -62,7 +117,7 @@ func ScanPorts(hostname string) []models.PortScan {
 	}
 
 	go func() {
-		var ports []int = topPorts.GetTopPorts(1000)
+		var ports []int = topPorts.GetTopPorts(27452)
 		for _, port := range ports {
 			portsCh <- port
 		}
@@ -77,7 +132,7 @@ func ScanPorts(hostname string) []models.PortScan {
 	for r := range resultsCh {
 		results = append(results, r)
 	}
-
+	mu.Unlock()
 	return results
 }
 
