@@ -11,7 +11,9 @@ import (
 	"time"
 
 	"github.com/bitmattz/nira_the_sniffer/models"
+	pidFinder "github.com/bitmattz/nira_the_sniffer/services/pidFinder"
 	topPorts "github.com/bitmattz/nira_the_sniffer/services/topPorts"
+	"github.com/shirou/gopsutil/v3/process"
 )
 
 const (
@@ -37,38 +39,32 @@ func ScanPort(protocol, hostname string, port int) models.PortScan {
 	}
 	defer conn.Close()
 	result.State = "open"
-	// banner grab básico: tenta ler dados enviados pelo serviço
 	_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	reader := bufio.NewReader(conn)
-	peek, _ := reader.Peek(1024) // não bloqueia mais que o deadline
+	peek, _ := reader.Peek(1024)
 	if len(peek) > 0 {
 		b := strings.TrimSpace(string(peek))
-		// mantém só a primeira linha do banner para evitar muito texto
 		if idx := strings.IndexByte(b, '\n'); idx >= 0 {
 			b = strings.TrimSpace(b[:idx])
 		}
-		result.Service = fmt.Sprintf("banner: %s", b)
+		result.Banner = fmt.Sprintf("banner: %s", b)
 		return result
 	}
 
-	// probes simples por porta conhecida (HTTP/TLS)
 	httpPorts := map[int]bool{80: true, 8080: true, 8000: true, 8081: true}
 	if httpPorts[port] {
-		// enviar HEAD para provocar resposta
 		_ = conn.SetWriteDeadline(time.Now().Add(300 * time.Millisecond))
 		fmt.Fprintf(conn, "HEAD / HTTP/1.0\r\nHost: %s\r\n\r\n", hostname)
 		_ = conn.SetReadDeadline(time.Now().Add(700 * time.Millisecond))
 		resp, _ := reader.ReadString('\n')
 		resp = strings.TrimSpace(resp)
 		if resp != "" {
-			result.Service = fmt.Sprintf("http: %s", resp)
+			result.Banner = fmt.Sprintf("http: %s", resp)
 			return result
 		}
 	}
 
-	// TLS handshake em 443 (ou se porta for 8443)
 	if port == 443 || port == 8443 {
-		// reaproveitar a conexão para handshake TLS
 		_ = conn.SetDeadline(time.Now().Add(1 * time.Second))
 		tlsConn := tls.Client(conn, &tls.Config{
 			InsecureSkipVerify: true,
@@ -77,17 +73,45 @@ func ScanPort(protocol, hostname string, port int) models.PortScan {
 		if err := tlsConn.Handshake(); err == nil {
 			if state := tlsConn.ConnectionState(); len(state.PeerCertificates) > 0 {
 				cn := state.PeerCertificates[0].Subject.CommonName
-				result.Service = fmt.Sprintf("tls: %s", cn)
+				result.Banner = fmt.Sprintf("tls: %s", cn)
 				return result
 			}
-			result.Service = "tls"
+			result.Banner = "tls"
 			return result
 		}
-		// se handshake falhar, continua sem service
 	}
 
-	// fallback: nenhum banner detectado
-	result.Service = "unknown"
+	if hostname == "localhost" || hostname == "127.0.0.1" {
+
+		pids, err := pidFinder.FindPIDByPort(port)
+		if err != nil {
+			fmt.Println("Error:", err)
+		}
+
+		if len(pids) == 0 {
+			fmt.Println("No process found")
+		}
+
+		var pidName string
+
+		for _, pid := range pids {
+			pid32, err := strconv.ParseInt(pid, 10, 32)
+			pidNumber := int32(pid32)
+
+			if err != nil {
+				continue
+			}
+			p, _ := process.NewProcess(pidNumber)
+			name, _ := p.Name()
+			pidName = pid + " | " + name
+		}
+		result.PID = pidName
+		return result
+
+	}
+
+	result.Banner = "unknown"
+	result.PID = "unknown"
 	return result
 }
 
@@ -136,7 +160,7 @@ func ScanPorts(hostname string) []models.PortScan {
 	return results
 }
 
-// I'll share my recipe to make tortilla
+// I'll share my recipe to make tortilla (No, this is not AI generated)
 /*
 Ingredients:
 - 2 cups of flour

@@ -5,8 +5,8 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
-
 	"strconv"
+	"strings"
 
 	"github.com/bitmattz/nira_the_sniffer/models"
 	portHandler "github.com/bitmattz/nira_the_sniffer/services/ports"
@@ -71,20 +71,46 @@ func (m ApplicationPresenter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				case scanPorts:
 
 					result := portHandler.ScanPorts(address)
+
 					m.TextInput.Blur()
 					if result == nil || len(result) == 0 {
 						m.InputMode = false
 						return m, nil
 
 					} else {
-						columns := []table.Column{
-							{Title: "Port", Width: 10},
-							{Title: "State", Width: 10},
-							{Title: "Service", Width: 200},
-						}
+
 						rows := make([]table.Row, len(result))
+						var port, state, banner, pid string
 						for i, scan := range result {
-							rows[i] = table.Row{strconv.Itoa(scan.Port), scan.State, scan.Service}
+
+							if scan.Port != 0 {
+								port = strconv.Itoa(scan.Port)
+							} else {
+								port = "Unknown"
+							}
+							if scan.State != "" && scan.State != "unknown" && strings.TrimSpace(scan.State) != "" {
+								state = scan.State
+							} else {
+								state = "Unknown"
+							}
+							if scan.Banner != "" && scan.Banner != "unknown" && strings.TrimSpace(scan.Banner) != "" {
+								banner = scan.Banner
+							} else {
+								banner = "Unknown"
+							}
+							if scan.PID != "" && scan.PID != "unknown" && strings.TrimSpace(scan.PID) != "" {
+								pid = scan.PID
+							} else {
+								pid = "Unknown"
+							}
+							rows[i] = table.Row{port, state, banner, pid}
+						}
+
+						columns := []table.Column{
+							{Title: "Port", Width: len(port) * 2},
+							{Title: "State", Width: len(state) * 2},
+							{Title: "Banner", Width: len(banner) * 2},
+							{Title: "PID", Width: len(pid) * 2},
 						}
 
 						t := table.New(

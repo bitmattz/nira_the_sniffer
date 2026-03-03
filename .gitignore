@@ -5,3 +5,4 @@
 vendor/
 go.sum
 go.work.sum
+.vscode/
