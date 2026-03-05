@@ -6,13 +6,13 @@ import (
 )
 
 type ApplicationPresenter struct {
-	Choices           []string
-	Cursor            int
-	Selected          map[int]struct{}
-	Page              int
-	TextInput         textinput.Model
-	InputMode         bool
-	TableResult       table.Model
-	PortsResultStatus string
-	TableMode         bool
+	Choices     []string
+	Cursor      int
+	Selected    map[int]struct{}
+	Page        int
+	InputMode   bool
+	TextInput   textinput.Model
+	TableMode   bool
+	TableResult table.Model
+	IsLoading   bool
 }

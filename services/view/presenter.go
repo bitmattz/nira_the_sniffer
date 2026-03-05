@@ -10,6 +10,7 @@ import (
 
 	"github.com/bitmattz/nira_the_sniffer/models"
 	portHandler "github.com/bitmattz/nira_the_sniffer/services/ports"
+
 	"github.com/charmbracelet/bubbles/table"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
@@ -28,6 +29,15 @@ const (
 	scanSpecificPort
 	history
 )
+
+type scanFinishedMsg []models.PortScan
+
+func scanPortsCmd(address string) tea.Cmd {
+	return func() tea.Msg {
+		results := portHandler.ScanPorts(address)
+		return scanFinishedMsg(results)
+	}
+}
 
 func initialModel() ApplicationPresenter {
 	ti := textinput.New()
@@ -50,8 +60,8 @@ func initialModel() ApplicationPresenter {
 		TextInput:   ti,
 		TableMode:   false,
 		TableResult: tableResult,
+		IsLoading:   false,
 	}
-
 }
 
 func (m ApplicationPresenter) Init() tea.Cmd {
@@ -60,85 +70,102 @@ func (m ApplicationPresenter) Init() tea.Cmd {
 
 func (m ApplicationPresenter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
-	if key, ok := msg.(tea.KeyMsg); ok {
-		if (m.Page == scanPorts || m.Page == scanSpecificPort) && m.InputMode {
-			m.TextInput, cmd = m.TextInput.Update(key)
 
-			// If user pressed Enter while typing, handle the value and exit input mode
-			if key.String() == "enter" {
-				address := m.TextInput.Value()
-				switch m.Page {
-				case scanPorts:
-
-					result := portHandler.ScanPorts(address)
-
-					m.TextInput.Blur()
-					if result == nil || len(result) == 0 {
-						m.InputMode = false
-						return m, nil
-
-					} else {
-
-						rows := make([]table.Row, len(result))
-						var port, state, banner, pid string
-						for i, scan := range result {
-
-							if scan.Port != 0 {
-								port = strconv.Itoa(scan.Port)
-							} else {
-								port = "Unknown"
-							}
-							if scan.State != "" && scan.State != "unknown" && strings.TrimSpace(scan.State) != "" {
-								state = scan.State
-							} else {
-								state = "Unknown"
-							}
-							if scan.Banner != "" && scan.Banner != "unknown" && strings.TrimSpace(scan.Banner) != "" {
-								banner = scan.Banner
-							} else {
-								banner = "Unknown"
-							}
-							if scan.PID != "" && scan.PID != "unknown" && strings.TrimSpace(scan.PID) != "" {
-								pid = scan.PID
-							} else {
-								pid = "Unknown"
-							}
-							rows[i] = table.Row{port, state, banner, pid}
-						}
-
-						columns := []table.Column{
-							{Title: "Port", Width: len(port) * 2},
-							{Title: "State", Width: len(state) * 2},
-							{Title: "Banner", Width: len(banner) * 2},
-							{Title: "PID", Width: len(pid) * 2},
-						}
-
-						t := table.New(
-							table.WithColumns(columns),
-							table.WithRows(rows),
-							table.WithFocused(true),
-							table.WithHeight(7),
-						)
-
-						m.TableResult = t
-					}
-
-				case scanSpecificPort:
-					var port, err = strconv.Atoi(address)
-					if err != nil {
-						return m, nil
-					}
-					portHandler.ScanPort("TCP", "localhost", port)
-				}
-				m.InputMode = false
-			}
-
-			return m, cmd
-		}
-	}
 	switch msg := msg.(type) {
 
+	case scanFinishedMsg:
+		m.IsLoading = false
+		res := []models.PortScan(msg)
+		maxBannerWidth := len("Banner")
+
+		if len(res) == 0 {
+			return m, nil
+		}
+
+		rows := make([]table.Row, len(res))
+		for i, scan := range res {
+			port := "Unknown"
+			if scan.Port != 0 {
+				port = strconv.Itoa(scan.Port)
+			}
+
+			state := "Unknown"
+			if strings.TrimSpace(scan.State) != "" && scan.State != "unknown" {
+				state = scan.State
+			}
+
+			banner := "Unknown"
+			if strings.TrimSpace(scan.Banner) != "" && scan.Banner != "unknown" {
+				banner = scan.Banner
+			}
+
+			pid := "Unknown"
+			if strings.TrimSpace(scan.PID) != "" && scan.PID != "unknown" {
+				pid = scan.PID
+			}
+
+			if len(banner) > maxBannerWidth {
+				maxBannerWidth = len(banner)
+
+			}
+			if maxBannerWidth > 30 {
+				maxBannerWidth = 30
+			}
+			if m.TextInput.Value() == "localhost" || m.TextInput.Value() == "127.0.0.1" {
+				rows[i] = table.Row{port, state, banner, pid}
+			} else {
+				rows[i] = table.Row{port, state, banner}
+
+			}
+		}
+		if m.TextInput.Value() == "localhost" || m.TextInput.Value() == "127.0.0.1" {
+			columns := []table.Column{
+				{Title: "Port", Width: 8},
+				{Title: "State", Width: 8},
+				{Title: "Banner", Width: maxBannerWidth},
+				{Title: "PID", Width: 20},
+			}
+
+			m.TableResult = table.New(
+				table.WithColumns(columns),
+				table.WithRows(rows),
+				table.WithFocused(true),
+				table.WithHeight(7),
+			)
+		} else {
+			columns := []table.Column{
+				{Title: "Port", Width: 8},
+				{Title: "State", Width: 8},
+				{Title: "Banner", Width: maxBannerWidth},
+			}
+
+			m.TableResult = table.New(
+				table.WithColumns(columns),
+				table.WithRows(rows),
+				table.WithFocused(true),
+				table.WithHeight(7),
+			)
+		}
+
+		return m, nil
+
 	case tea.KeyMsg:
+
+		if (m.Page == scanPorts || m.Page == scanSpecificPort) && m.InputMode {
+			m.TextInput, cmd = m.TextInput.Update(msg)
+
+			if msg.String() == "enter" {
+				address := m.TextInput.Value()
+
+				switch m.Page {
+				case scanPorts:
+					m.InputMode = true
+					m.IsLoading = true
+					return m, scanPortsCmd(address)
+				}
+			}
+			return m, cmd
+		}
 
 		switch msg.String() {
 
@@ -162,22 +189,16 @@ func (m ApplicationPresenter) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.Page = scanPorts
 					m.InputMode = true
 					m.TextInput.Focus()
-				case 1:
-					m.Page = scanSpecificPort
-					m.InputMode = true
-					m.TextInput.Focus()
-				case 2:
-					m.Page = history
 				}
 			}
 
-		case "esc", "backspace":
+		case "esc":
 			if m.Page != menu {
 				m.Page = menu
 			}
 		}
-
 	}
+
 	return m, cmd
 }
 
@@ -197,20 +218,16 @@ func loadMenuView(m ApplicationPresenter) string {
 	s := stylePurple.Render("Nira The Sniffer\n")
 	s += "\nWhat do you want to do?\n\n"
 
-	// Iterate over choices
 	for i, choice := range m.Choices {
-		cursor := " " // no cursor
+		cursor := " "
 		if m.Cursor == i {
 			cursor = stylePurple.Render(">")
 			choice = stylePurple.Render(choice)
 		}
-
-		// Render the row
 		s += cursor + " " + choice + "\n"
 	}
 
 	s += "\nPress q to quit.\n"
-
 	return s
 }
 
@@ -218,15 +235,20 @@ func scanPortsByIPView(m ApplicationPresenter) string {
 	s := stylePurple.Render("Nira The Sniffer\n")
 	s += styleTitle.Render("\nScan Ports by IP")
 	s += stylePurple.Render(" > ")
-	s += styleSubTitle.Render("Enter a IP address.\n")
+	s += styleSubTitle.Render("Enter an IP address.\n")
 
 	s += "\n" + m.TextInput.View() + "\n"
+
+	if m.IsLoading {
+		s += "\nScanning...\n"
+	}
+
 	var tableStyle = lipgloss.NewStyle().
 		BorderForeground(lipgloss.Color("240"))
 
 	s += "\n" + tableStyle.Render(m.TableResult.View()) + "\n"
 
-	s += "\nPress esc or backspace to go back to menu.\n"
+	s += "\nPress esc to go back to menu.\n"
 	s += "\nPress q to quit.\n"
 
 	return s
